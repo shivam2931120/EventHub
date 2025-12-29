@@ -1,83 +1,146 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createPhonePePayment } from '@/lib/phonepe';
 import { TicketFormData } from '@/types';
+import { ticketStorage } from '@/lib/ticket-storage';
+
+// Fallback events data (same as events/route.ts)
+const FALLBACK_EVENTS: Record<string, { name: string; price: number }> = {
+  'event-1': { name: 'Tech Conference 2025', price: 50000 },
+  'event-2': { name: 'Music Festival Night', price: 200000 },
+  'event-3': { name: 'Startup Meetup', price: 20000 },
+  'event-4': { name: 'Art Exhibition Opening', price: 30000 },
+};
 
 export async function POST(req: NextRequest) {
   try {
-    const body: TicketFormData = await req.json();
-    
+    const body = await req.json();
+
+    // Support both single and multi-ticket purchase
+    const quantity = body.quantity || 1;
+    const attendees = body.attendees || [{ name: body.name, email: body.email, phone: body.phone }];
+
     // Validate required fields
-    if (!body.name || !body.eventId) {
+    if (attendees.length === 0 || !attendees[0].name || !body.eventId) {
       return NextResponse.json(
-        { error: 'Name and eventId are required' },
+        { error: 'Name and event are required' },
         { status: 400 }
       );
     }
 
-    // Create pending ticket in database
-    const ticket = await prisma.ticket.create({
-      data: {
-        name: body.name,
-        email: body.email || null,
-        phone: body.phone || null,
-        eventId: body.eventId,
-        status: 'pending',
-      },
-    });
+    // Check fallback events first
+    const fallbackEvent = FALLBACK_EVENTS[body.eventId];
 
-    // Create PhonePe Payment
-    const payment = await createPhonePePayment({
-      ticketId: ticket.id,
-      amount: 20000, // ₹200 in paise
-      name: body.name,
-      email: body.email,
-      phone: body.phone,
-    });
+    // Try database first, then fallback
+    let event = null;
+    let eventName = '';
+    let eventPrice = 0;
+
+    try {
+      event = await prisma.event.findUnique({
+        where: { id: body.eventId },
+      });
+      if (event) {
+        eventName = event.name;
+        eventPrice = event.price;
+      }
+    } catch (e) {
+      console.log('Database not available, using fallback events');
+    }
+
+    // Use fallback if no database event
+    if (!event && fallbackEvent) {
+      eventName = fallbackEvent.name;
+      eventPrice = fallbackEvent.price;
+    } else if (!event && !fallbackEvent) {
+      return NextResponse.json(
+        { error: 'Event not found' },
+        { status: 404 }
+      );
+    }
+
+    // Create tickets for all attendees
+    const ticketIds: string[] = [];
+
+    for (let i = 0; i < attendees.length; i++) {
+      const attendee = attendees[i];
+      let ticketId: string;
+
+      try {
+        const ticket = await prisma.ticket.create({
+          data: {
+            name: attendee.name,
+            email: attendee.email || body.email || null,
+            phone: attendee.phone || body.phone || null,
+            eventId: body.eventId,
+            status: 'pending',
+          },
+        });
+        ticketId = ticket.id;
+        console.log(`Ticket ${i + 1}/${attendees.length} created in database:`, ticketId);
+      } catch (e) {
+        // Fallback to in-memory storage
+        ticketId = `ticket-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}`;
+        ticketStorage.set(ticketId, {
+          id: ticketId,
+          name: attendee.name,
+          email: attendee.email || body.email || null,
+          phone: attendee.phone || body.phone || null,
+          eventId: body.eventId,
+          status: 'pending',
+          token: null,
+          checkedIn: false,
+          createdAt: new Date(),
+        });
+        console.log(`Ticket ${i + 1}/${attendees.length} created in memory:`, ticketId);
+      }
+
+      ticketIds.push(ticketId);
+    }
 
     return NextResponse.json({
-      ticketId: ticket.id,
-      transactionId: payment.transactionId,
-      paymentUrl: payment.paymentUrl,
+      ticketId: ticketIds[0], // Primary ticket ID for backwards compatibility
+      ticketIds, // All ticket IDs for multi-ticket
+      quantity: ticketIds.length,
+      eventName,
+      price: eventPrice,
+      totalPrice: eventPrice * ticketIds.length,
     });
   } catch (error: any) {
-    console.error('Error creating ticket:', error);
+    console.error('Error creating ticket(s):', error);
     return NextResponse.json(
-      { error: error.message || 'Failed to create ticket' },
+      { error: error.message || 'Failed to create ticket(s)' },
       { status: 500 }
     );
   }
 }
 
-// GET /api/tickets/[id] - Get ticket details
+// GET /api/tickets - Get all tickets (for admin)
 export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
-    const ticketId = url.pathname.split('/').pop();
+    const eventId = url.searchParams.get('eventId');
 
-    if (!ticketId) {
-      return NextResponse.json(
-        { error: 'Ticket ID is required' },
-        { status: 400 }
-      );
+    let tickets: any[] = [];
+
+    try {
+      tickets = await prisma.ticket.findMany({
+        where: eventId ? { eventId } : {},
+        include: { event: true },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch (e) {
+      // Return in-memory tickets if database not available
+      tickets = ticketStorage.getAll();
+      if (eventId) {
+        tickets = tickets.filter(t => t.eventId === eventId);
+      }
     }
 
-    const ticket = await prisma.ticket.findUnique({
-      where: { id: ticketId },
-    });
-
-    if (!ticket) {
-      return NextResponse.json(
-        { error: 'Ticket not found' },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json(ticket);
+    return NextResponse.json(tickets);
   } catch (error) {
-    console.error('Error fetching ticket:', error);
+    console.error('Error fetching tickets:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch ticket' },
+      { error: 'Failed to fetch tickets' },
       { status: 500 }
     );
   }

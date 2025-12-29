@@ -10,17 +10,24 @@
     "postinstall": "POSTGRES_PRISMA_URL=postgresql://temp:temp@temp:5432/temp POSTGRES_URL_NON_POOLING=postgresql://temp:temp@temp:5432/temp prisma generate || prisma generate"
   },
   "dependencies": {
+    "@getbrevo/brevo": "^3.0.1",
     "@prisma/client": "^6.1.0",
     "@zxing/browser": "^0.1.5",
     "@zxing/library": "^0.21.3",
     "axios": "^1.7.9",
-    "next": "15.0.3",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.4",
+    "next": "^16.1.1",
+    "nodemailer": "^7.0.12",
     "qrcode": "^1.5.4",
-    "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "razorpay": "^2.9.6",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3",
+    "recharts": "^3.6.0"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/nodemailer": "^7.0.4",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",

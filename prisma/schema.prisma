@@ -7,20 +7,132 @@ generator client {
   provider = "prisma-client-js"
 }
 
-model Ticket {
-  id          String    @id @default(uuid())
+
+model Event {
+  id          String   @id @default(uuid())
   name        String
-  email       String?
-  phone       String?
-  eventId     String
-  status      String    @default("pending")
-  token       String?
-  checkedIn   Boolean   @default(false)
-  checkedInAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  description String?
+  date        DateTime // We will store this as the date object
+  startTime   String   @default("09:00")
+  endTime     String   @default("18:00")
+  venue       String?
+  address     String?
+  price       Int      @default(0) // in paise
+  entryFee    Int      @default(0)
+  prizePool   Int      @default(0)
+  category    String   @default("other")
+  imageUrl    String?
+  capacity    Int      @default(100)
+  soldCount   Int      @default(0)
+  isActive    Boolean  @default(true)
+  isFeatured  Boolean  @default(false)
+  
+  // JSON fields for complex data
+  schedule    Json     @default("[]")
+  speakers    Json     @default("[]")
+  sponsors    Json     @default("[]")
+  tags        String[] @default([])
+  
+  organizer   String?
+  contactEmail String?
+  contactPhone String?
+  termsAndConditions String?
+  
+  registrationDeadline String?
+  earlyBirdEnabled Boolean @default(false)
+  earlyBirdPrice   Int     @default(0)
+  earlyBirdDeadline String?
+  sendReminders    Boolean @default(false)
+
+  tickets     Ticket[]
+  polls       Question[]
+  photos      Photo[]
+  reviews     Review[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([category])
+}
+
+model Ticket {
+  id              String    @id @default(uuid())
+  name            String
+  email           String?
+  phone           String?
+  eventId         String
+  event           Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status          String    @default("pending")
+  token           String?
+  razorpayOrderId String?
+  razorpayPaymentId String?
+  checkedIn       Boolean   @default(false)
+  checkedInAt     DateTime?
+  
+  // Multi-ticket support
+  purchaseGroupId String?   // To group tickets bought together
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([eventId])
   @@index([status])
   @@index([email])
+  @@index([razorpayOrderId])
 }
+
+model Question {
+  id          String   @id @default(uuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  question    String
+  askerName   String
+  askerEmail  String?
+  type        String   @default("poll") // poll or qna
+  options     String[] // Poll options
+  votes       Int[]    // Vote counts matching options index
+  answers     Json     @default("[]") // For Q&A: {text, authorName, createdAt}[]
+  approved    Boolean  @default(false)
+  featured    Boolean  @default(false)
+  answered    Boolean  @default(false)
+  upvotes     Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([approved])
+}
+
+model Photo {
+  id           String   @id @default(uuid())
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  imageUrl     String
+  uploaderName String
+  caption      String?
+  approved     Boolean  @default(false)
+  likes        Int      @default(0)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([approved])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userName  String
+  rating    Int
+  comment   String
+  
+  createdAt DateTime @default(now())
+  
+  @@index([eventId])
+}
+
+

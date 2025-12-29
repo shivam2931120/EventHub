@@ -9,7 +9,7 @@ export function generateTicketToken(ticketId: string): string {
   if (!secret) {
     throw new Error('TICKET_SECRET_KEY not configured');
   }
-  
+
   const hmac = crypto.createHmac('sha256', secret);
   hmac.update(ticketId);
   return hmac.digest('hex');
@@ -29,8 +29,7 @@ export function verifyTicketToken(ticketId: string, token: string): boolean {
 /**
  * Generate QR code data URL
  */
-export async function generateQRCode(ticketId: string, token: string): Promise<string> {
-  const payload = JSON.stringify({ ticketId, token });
+export async function generateQRCode(payload: string): Promise<string> {
   return await QRCode.toDataURL(payload);
 }
 

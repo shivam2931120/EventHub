@@ -1,0 +1,299 @@
+'use client';
+
+import { useState, useMemo } from 'react';
+import { useApp } from '@/lib/store';
+import {
+    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+    PieChart, Pie, Cell, LineChart, Line, AreaChart, Area
+} from 'recharts';
+
+// Chart colors
+const COLORS = ['#dc2626', '#ea580c', '#d97706', '#ca8a04', '#65a30d', '#16a34a', '#0d9488', '#0891b2', '#0284c7', '#7c3aed'];
+
+interface AttendeeInsightsProps {
+    eventId?: string; // Optional filter by event
+}
+
+export default function AttendeeInsights({ eventId }: AttendeeInsightsProps) {
+    const { tickets, events } = useApp();
+    const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | 'all'>('30d');
+
+    // Filter tickets by event and time range
+    const filteredTickets = useMemo(() => {
+        let filtered = tickets.filter(t => t.status === 'paid');
+
+        if (eventId) {
+            filtered = filtered.filter(t => t.eventId === eventId);
+        }
+
+        // Apply time range filter
+        const now = new Date();
+        const ranges: Record<string, number> = {
+            '7d': 7,
+            '30d': 30,
+            '90d': 90,
+        };
+
+        if (timeRange !== 'all' && ranges[timeRange]) {
+            const cutoff = new Date(now.getTime() - ranges[timeRange] * 24 * 60 * 60 * 1000);
+            filtered = filtered.filter(t => new Date(t.createdAt) >= cutoff);
+        }
+
+        return filtered;
+    }, [tickets, eventId, timeRange]);
+
+    // Analytics calculations
+    const analytics = useMemo(() => {
+        const totalTickets = filteredTickets.length;
+        const checkedInTickets = filteredTickets.filter(t => t.checkedIn).length;
+        const checkInRate = totalTickets > 0 ? (checkedInTickets / totalTickets * 100).toFixed(1) : '0';
+
+        // Repeat attendees (by email)
+        const emailCounts: Record<string, number> = {};
+        filteredTickets.forEach(t => {
+            if (t.email) {
+                emailCounts[t.email] = (emailCounts[t.email] || 0) + 1;
+            }
+        });
+        const repeatAttendees = Object.values(emailCounts).filter(c => c > 1).length;
+        const uniqueAttendees = Object.keys(emailCounts).length;
+
+        // Sales by event
+        const salesByEvent: Record<string, number> = {};
+        filteredTickets.forEach(t => {
+            const event = events.find(e => e.id === t.eventId);
+            const eventName = event?.name || 'Unknown Event';
+            salesByEvent[eventName] = (salesByEvent[eventName] || 0) + 1;
+        });
+        const salesByEventData = Object.entries(salesByEvent)
+            .map(([name, count]) => ({ name: name.length > 20 ? name.slice(0, 20) + '...' : name, count }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 8);
+
+        // Sales over time (daily)
+        const salesByDay: Record<string, number> = {};
+        filteredTickets.forEach(t => {
+            const date = new Date(t.createdAt).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' });
+            salesByDay[date] = (salesByDay[date] || 0) + 1;
+        });
+        const salesTrendData = Object.entries(salesByDay)
+            .map(([date, sales]) => ({ date, sales }))
+            .slice(-14); // Last 14 days
+
+        // Booking hours distribution
+        const bookingHours: number[] = new Array(24).fill(0);
+        filteredTickets.forEach(t => {
+            const hour = new Date(t.createdAt).getHours();
+            bookingHours[hour]++;
+        });
+        const peakHoursData = bookingHours.map((count, hour) => ({
+            hour: `${hour.toString().padStart(2, '0')}:00`,
+            bookings: count,
+        }));
+
+        // Check-in status distribution
+        const checkInData = [
+            { name: 'Checked In', value: checkedInTickets },
+            { name: 'Not Checked In', value: totalTickets - checkedInTickets },
+        ];
+
+        return {
+            totalTickets,
+            checkedInTickets,
+            checkInRate,
+            repeatAttendees,
+            uniqueAttendees,
+            salesByEventData,
+            salesTrendData,
+            peakHoursData,
+            checkInData,
+        };
+    }, [filteredTickets, events]);
+
+    // Export to CSV
+    const exportToCSV = () => {
+        const headers = ['Name', 'Email', 'Phone', 'Event', 'Status', 'Checked In', 'Created At'];
+        const rows = filteredTickets.map(t => {
+            const event = events.find(e => e.id === t.eventId);
+            return [
+                t.name,
+                t.email || '',
+                t.phone || '',
+                event?.name || t.eventId,
+                t.status,
+                t.checkedIn ? 'Yes' : 'No',
+                new Date(t.createdAt).toLocaleString(),
+            ];
+        });
+
+        const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `attendee-insights-${new Date().toISOString().split('T')[0]}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div className="space-y-6">
+            {/* Header with controls */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                    <h2 className="text-xl font-bold text-white">Attendee Insights</h2>
+                    <p className="text-sm text-zinc-400">Analytics and trends for your events</p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                    {/* Time Range Selector */}
+                    <select
+                        value={timeRange}
+                        onChange={(e) => setTimeRange(e.target.value as any)}
+                        className="px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                    >
+                        <option value="7d">Last 7 days</option>
+                        <option value="30d">Last 30 days</option>
+                        <option value="90d">Last 90 days</option>
+                        <option value="all">All time</option>
+                    </select>
+
+                    {/* Export Button */}
+                    <button
+                        onClick={exportToCSV}
+                        className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg text-white text-sm flex items-center gap-2 transition-colors"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Export CSV
+                    </button>
+                </div>
+            </div>
+
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                    <p className="text-sm text-zinc-400">Total Tickets</p>
+                    <p className="text-3xl font-bold text-white mt-1">{analytics.totalTickets}</p>
+                </div>
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                    <p className="text-sm text-zinc-400">Unique Attendees</p>
+                    <p className="text-3xl font-bold text-white mt-1">{analytics.uniqueAttendees}</p>
+                </div>
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                    <p className="text-sm text-zinc-400">Repeat Attendees</p>
+                    <p className="text-3xl font-bold text-green-400 mt-1">{analytics.repeatAttendees}</p>
+                </div>
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                    <p className="text-sm text-zinc-400">Check-in Rate</p>
+                    <p className="text-3xl font-bold text-blue-400 mt-1">{analytics.checkInRate}%</p>
+                </div>
+            </div>
+
+            {/* Charts Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Sales Trend */}
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                    <h3 className="text-sm font-semibold text-zinc-300 mb-4">Sales Trend</h3>
+                    <div className="h-64">
+                        {analytics.salesTrendData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <AreaChart data={analytics.salesTrendData}>
+                                    <defs>
+                                        <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#dc2626" stopOpacity={0.3} />
+                                            <stop offset="95%" stopColor="#dc2626" stopOpacity={0} />
+                                        </linearGradient>
+                                    </defs>
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                                    <XAxis dataKey="date" stroke="#9ca3af" fontSize={12} />
+                                    <YAxis stroke="#9ca3af" fontSize={12} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
+                                        labelStyle={{ color: '#fff' }}
+                                    />
+                                    <Area type="monotone" dataKey="sales" stroke="#dc2626" fill="url(#salesGradient)" strokeWidth={2} />
+                                </AreaChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-zinc-500">No sales data</div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Sales by Event */}
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                    <h3 className="text-sm font-semibold text-zinc-300 mb-4">Sales by Event</h3>
+                    <div className="h-64">
+                        {analytics.salesByEventData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={analytics.salesByEventData} layout="vertical">
+                                    <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                                    <XAxis type="number" stroke="#9ca3af" fontSize={12} />
+                                    <YAxis type="category" dataKey="name" stroke="#9ca3af" fontSize={11} width={100} />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
+                                    />
+                                    <Bar dataKey="count" fill="#dc2626" radius={[0, 4, 4, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="h-full flex items-center justify-center text-zinc-500">No event data</div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Peak Booking Hours */}
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                    <h3 className="text-sm font-semibold text-zinc-300 mb-4">Peak Booking Hours</h3>
+                    <div className="h-64">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={analytics.peakHoursData}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                                <XAxis dataKey="hour" stroke="#9ca3af" fontSize={10} interval={2} />
+                                <YAxis stroke="#9ca3af" fontSize={12} />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
+                                />
+                                <Bar dataKey="bookings" fill="#0891b2" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Check-in Status */}
+                <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-4">
+                    <h3 className="text-sm font-semibold text-zinc-300 mb-4">Check-in Status</h3>
+                    <div className="h-64 flex items-center justify-center">
+                        {analytics.totalTickets > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={analytics.checkInData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius={60}
+                                        outerRadius={90}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                        label={({ name, percent = 0 }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                                        labelLine={false}
+                                    >
+                                        <Cell fill="#16a34a" />
+                                        <Cell fill="#3f3f46" />
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px' }}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="text-zinc-500">No check-in data</div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
