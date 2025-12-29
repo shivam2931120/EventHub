@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma db push && next build",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "postinstall": "POSTGRES_PRISMA_URL=postgresql://temp:temp@temp:5432/temp POSTGRES_URL_NON_POOLING=postgresql://temp:temp@temp:5432/temp prisma generate || prisma generate"
@@ -33,7 +33,7 @@
     "@types/react-dom": "^19",
     "dotenv": "^16.4.7",
     "eslint": "^8",
-    "eslint-config-next": "15.0.3",
+    "eslint-config-next": "^16.1.1",
     "postcss": "^8",
     "prisma": "^6.1.0",
     "tailwindcss": "^3.4.1",
