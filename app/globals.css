@@ -129,8 +129,15 @@ select {
 
 /* Floating animation */
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 .animate-float {
@@ -139,8 +146,15 @@ select {
 
 /* Pulse glow for countdown */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 10px rgba(220, 38, 38, 0.3); }
-  50% { box-shadow: 0 0 25px rgba(220, 38, 38, 0.6); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(220, 38, 38, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 25px rgba(220, 38, 38, 0.6);
+  }
 }
 
 .animate-pulse-glow {
@@ -149,9 +163,17 @@ select {
 
 /* Gradient text animation */
 @keyframes gradient-shift {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
 }
 
 .gradient-text {
@@ -169,6 +191,7 @@ select {
     opacity: 0;
     transform: translateY(30px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -179,11 +202,25 @@ select {
   animation: fade-in-up 0.6s ease-out forwards;
 }
 
-.animation-delay-100 { animation-delay: 0.1s; }
-.animation-delay-200 { animation-delay: 0.2s; }
-.animation-delay-300 { animation-delay: 0.3s; }
-.animation-delay-400 { animation-delay: 0.4s; }
-.animation-delay-500 { animation-delay: 0.5s; }
+.animation-delay-100 {
+  animation-delay: 0.1s;
+}
+
+.animation-delay-200 {
+  animation-delay: 0.2s;
+}
+
+.animation-delay-300 {
+  animation-delay: 0.3s;
+}
+
+.animation-delay-400 {
+  animation-delay: 0.4s;
+}
+
+.animation-delay-500 {
+  animation-delay: 0.5s;
+}
 
 /* Scale in animation */
 @keyframes scale-in {
@@ -191,6 +228,7 @@ select {
     opacity: 0;
     transform: scale(0.9);
   }
+
   to {
     opacity: 1;
     transform: scale(1);
@@ -203,8 +241,17 @@ select {
 
 /* Timeline connector pulse */
 @keyframes timeline-pulse {
-  0%, 100% { background: #dc2626; box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4); }
-  50% { background: #ef4444; box-shadow: 0 0 0 8px rgba(220, 38, 38, 0); }
+
+  0%,
+  100% {
+    background: #dc2626;
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.4);
+  }
+
+  50% {
+    background: #ef4444;
+    box-shadow: 0 0 0 8px rgba(220, 38, 38, 0);
+  }
 }
 
 .animate-timeline-pulse {
@@ -223,7 +270,9 @@ select {
 
 /* Progress ring animation */
 @keyframes progress-fill {
-  from { stroke-dashoffset: 100; }
+  from {
+    stroke-dashoffset: 100;
+  }
 }
 
 .progress-ring {
@@ -232,12 +281,21 @@ select {
 
 /* Particles animation */
 @keyframes particle-float {
-  0%, 100% {
+
+  0%,
+  100% {
     transform: translateY(0) translateX(0) rotate(0deg);
     opacity: 0;
   }
-  10% { opacity: 0.6; }
-  90% { opacity: 0.6; }
+
+  10% {
+    opacity: 0.6;
+  }
+
+  90% {
+    opacity: 0.6;
+  }
+
   100% {
     transform: translateY(-100vh) translateX(50px) rotate(720deg);
     opacity: 0;
@@ -255,9 +313,17 @@ select {
 
 /* Countdown flip animation */
 @keyframes flip {
-  0% { transform: rotateX(0deg); }
-  50% { transform: rotateX(-90deg); }
-  100% { transform: rotateX(0deg); }
+  0% {
+    transform: rotateX(0deg);
+  }
+
+  50% {
+    transform: rotateX(-90deg);
+  }
+
+  100% {
+    transform: rotateX(0deg);
+  }
 }
 
 .countdown-flip {
@@ -270,8 +336,15 @@ select {
 
 /* Gradient border animation */
 @keyframes border-glow {
-  0%, 100% { border-color: rgba(220, 38, 38, 0.3); }
-  50% { border-color: rgba(220, 38, 38, 0.7); }
+
+  0%,
+  100% {
+    border-color: rgba(220, 38, 38, 0.3);
+  }
+
+  50% {
+    border-color: rgba(220, 38, 38, 0.7);
+  }
 }
 
 .animate-border-glow {

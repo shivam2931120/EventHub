@@ -6,9 +6,10 @@ import { useToast } from '@/components/Toaster';
 import QRScanner from '@/components/QRScanner';
 
 export default function CheckinPage() {
-  const { isAdminLoggedIn, loginAdmin, tickets, events, logoutAdmin } = useApp();
+  const { currentUser, login, tickets, events, logout } = useApp();
   const { showToast } = useToast();
 
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [scanResult, setScanResult] = useState<{ success: boolean; message: string; details?: any } | null>(null);
   const [manualCode, setManualCode] = useState('');
@@ -16,10 +17,10 @@ export default function CheckinPage() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    if (loginAdmin(password)) {
+    if (login(email, password)) {
       showToast('Login successful!', 'success');
     } else {
-      showToast('Invalid password', 'error');
+      showToast('Invalid email or password', 'error');
     }
     setPassword('');
   };
@@ -96,33 +97,38 @@ export default function CheckinPage() {
   };
 
   // Login Screen for non-admins
-  if (!isAdminLoggedIn) {
+  if (!currentUser) {
     return (
       <main className="min-h-screen bg-black flex items-center justify-center p-4">
         <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 w-full max-w-md">
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl mb-4">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
+            <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl mb-4 overflow-hidden">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
             </div>
             <h1 className="text-2xl font-bold text-white mb-2">Staff Check-In Portal</h1>
             <p className="text-zinc-400 text-sm">Admin login required</p>
           </div>
           <form onSubmit={handleLogin} className="space-y-4">
             <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="Email address"
+              className="w-full px-4 py-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-center text-lg tracking-widest"
+              autoFocus
+            />
+            <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Enter admin password"
+              placeholder="Password"
               className="w-full px-4 py-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-center text-lg tracking-widest"
-              autoFocus
             />
             <button type="submit" className="w-full py-4 bg-red-600 text-white rounded-xl hover:bg-red-700 font-semibold">
               Login
             </button>
           </form>
-          <p className="text-center text-zinc-500 text-xs mt-6">Password: admin123</p>
+          <p className="text-center text-zinc-500 text-xs mt-6">Default: admin@eventhub.com / admin123</p>
           <a href="/" className="block text-center text-zinc-400 hover:text-white mt-4 text-sm">← Back to Home</a>
         </div>
       </main>
@@ -135,10 +141,8 @@ export default function CheckinPage() {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-red-800 rounded-xl flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-              </svg>
+            <div className="w-12 h-12 bg-gradient-to-br from-red-600 to-red-800 rounded-xl flex items-center justify-center overflow-hidden">
+              <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-white">Check-In Portal</h1>
@@ -147,7 +151,7 @@ export default function CheckinPage() {
           </div>
           <div className="flex items-center gap-3">
             <a href="/admin" className="text-zinc-400 hover:text-white text-sm">Admin</a>
-            <button onClick={logoutAdmin} className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 text-sm">
+            <button onClick={logout} className="px-3 py-1.5 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 text-sm">
               Logout
             </button>
           </div>

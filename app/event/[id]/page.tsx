@@ -6,6 +6,34 @@ import { useToast } from '@/components/Toaster';
 import { useState, useEffect } from 'react';
 import EventPolls from '@/components/EventPolls';
 
+// Helper function to safely parse date and time
+function safeParseDate(dateStr: string, timeStr?: string): Date {
+    try {
+        // If dateStr is already an ISO string with time, extract just the date part
+        const datePart = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+
+        if (timeStr) {
+            // Combine date and time
+            return new Date(`${datePart}T${timeStr}`);
+        }
+        return new Date(dateStr);
+    } catch {
+        return new Date(); // Fallback to current date
+    }
+}
+
+// Helper to format date for Google Calendar (YYYYMMDDTHHmmssZ)
+function formatGoogleCalendarDate(dateStr: string, timeStr: string): string {
+    try {
+        const date = safeParseDate(dateStr, timeStr);
+        if (isNaN(date.getTime())) return '';
+        return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    } catch {
+        return '';
+    }
+}
+
+
 // Countdown Timer Component
 function CountdownTimer({ targetDate }: { targetDate: string }) {
     const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
@@ -324,7 +352,7 @@ export default function EventDetailsPage() {
                         {isUpcoming && (
                             <div className="animate-fade-in-up" style={{ opacity: 0, animationDelay: '0.4s' }}>
                                 <p className="text-zinc-400 text-sm mb-3 text-center md:text-left uppercase tracking-wider">Event Starts In</p>
-                                <CountdownTimer targetDate={`${event.date}T${event.startTime}`} />
+                                <CountdownTimer targetDate={safeParseDate(event.date, event.startTime).toISOString()} />
                             </div>
                         )}
                     </div>
@@ -534,7 +562,7 @@ export default function EventDetailsPage() {
                                     <div className="grid grid-cols-2 gap-3">
                                         {/* Google Calendar */}
                                         <a
-                                            href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.name)}&dates=${new Date(event.date + 'T' + event.startTime).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}/${new Date(event.date + 'T' + event.endTime).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')}&details=${encodeURIComponent(event.description)}&location=${encodeURIComponent(event.venue + ', ' + (event.address || ''))}`}
+                                            href={`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(event.name)}&dates=${formatGoogleCalendarDate(event.date, event.startTime)}/${formatGoogleCalendarDate(event.date, event.endTime)}&details=${encodeURIComponent(event.description || '')}&location=${encodeURIComponent((event.venue || '') + ', ' + (event.address || ''))}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="flex items-center gap-2 p-3 bg-zinc-800/50 rounded-xl hover:bg-zinc-700/50 transition-colors group"
@@ -548,9 +576,12 @@ export default function EventDetailsPage() {
                                         {/* Apple/iCal (.ics download) */}
                                         <button
                                             onClick={() => {
-                                                const startDate = new Date(event.date + 'T' + event.startTime);
-                                                const endDate = new Date(event.date + 'T' + event.endTime);
-                                                const formatICSDate = (date: Date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+                                                const startDate = safeParseDate(event.date, event.startTime);
+                                                const endDate = safeParseDate(event.date, event.endTime);
+                                                const formatICSDate = (date: Date) => {
+                                                    if (isNaN(date.getTime())) return '';
+                                                    return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+                                                };
 
                                                 const icsContent = `BEGIN:VCALENDAR
 VERSION:2.0
@@ -561,8 +592,8 @@ DTSTAMP:${formatICSDate(new Date())}
 DTSTART:${formatICSDate(startDate)}
 DTEND:${formatICSDate(endDate)}
 SUMMARY:${event.name}
-DESCRIPTION:${event.description.replace(/\n/g, '\\n')}
-LOCATION:${event.venue}${event.address ? ', ' + event.address : ''}
+DESCRIPTION:${(event.description || '').replace(/\n/g, '\\n')}
+LOCATION:${event.venue || ''}${event.address ? ', ' + event.address : ''}
 END:VEVENT
 END:VCALENDAR`;
 

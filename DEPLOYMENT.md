@@ -1,62 +1,89 @@
-# Deployment Guide for Vercel
+# EventHub Deployment Guide
 
-This application is built with Next.js 15, Prisma, and PostgreSQL. It is ready for deployment on Vercel.
+This guide covers the steps to deploy the EventHub application to a production environment.
 
 ## 1. Prerequisites
 
-- A **Vercel** account
-- A **GitHub/GitLab/Bitbucket** repository with this code
-- A **Brevo** account (for emails)
-- A **Razorpay** account (for payments)
-- A **Fast2SMS** account (optional, for SMS)
-- A **Meta Developer** account (optional, for WhatsApp)
+- **Node.js**: Version 18 or higher.
+- **PostgreSQL**: A running PostgreSQL database (e.g., Vercel Postgres, Supabase, Neon, or a local instance).
+- **Accounts**:
+  - **Brevo** for Email services (SMTP keys).
+  - **Razorpay** for Payment gateway.
+  - **PhonePe** (Optional) for alternative payments.
 
 ## 2. Environment Variables
 
-Configure the following Environment Variables in your Vercel Project Settings:
+Create a `.env` file in the root directory with the following variables:
 
-### Database (Automatically set if you add Vercel Postgres storage)
-- `POSTGRES_PRISMA_URL`
-- `POSTGRES_URL_NON_POOLING`
+```env
+# Application Base URL
+NEXT_PUBLIC_BASE_URL="https://your-domain.com"
 
-### Payments (Razorpay)
-- `RAZORPAY_KEY_ID`
-- `RAZORPAY_KEY_SECRET`
-- `NEXT_PUBLIC_RAZORPAY_KEY_ID`
+# Database Connection (Prisma)
+POSTGRES_PRISMA_URL="postgresql://user:password@host:port/database?sslmode=require"
+POSTGRES_URL_NON_POOLING="postgresql://user:password@host:port/database?sslmode=require"
 
-### Email (Brevo)
-- `BREVO_API_KEY`
-- `BREVO_SENDER_EMAIL`
-- `BREVO_SENDER_NAME`
+# Brevo (Email Service)
+BREVO_API_KEY="your-brevo-api-key"
+BREVO_SMTP_LOGIN="your-brevo-smtp-login-email"
+BREVO_SENDER_EMAIL="noreply@your-domain.com"
+BREVO_SENDER_NAME="EventHub"
 
-### Security
-- `TICKET_SECRET_KEY` (Generate a random UUID or string)
+# Razorpay (Payments)
+RAZORPAY_KEY_ID="rzp_test_..."
+RAZORPAY_KEY_SECRET="your-secret"
+NEXT_PUBLIC_RAZORPAY_KEY_ID="rzp_test_..."
 
-### App URL
-- `NEXT_PUBLIC_APP_URL` (e.g., `https://your-project.vercel.app`)
+# PhonePe (Optional)
+PHONEPE_MERCHANT_ID="your-merchant-id"
+PHONEPE_SALT_KEY="your-salt-key"
+PHONEPE_SALT_INDEX="1"
+PHONEPE_HOST_URL="https://api-preprod.phonepe.com/apis/pg-sandbox"
+```
 
-### Optional Notifications
-- `FAST2SMS_API_KEY`
-- `WHATSAPP_PHONE_NUMBER_ID`
-- `WHATSAPP_ACCESS_TOKEN`
+## 3. Installation & Build
 
-## 3. Database Setup
+1.  **Install Dependencies**:
+    ```bash
+    npm install
+    ```
 
-1. In Vercel, go to **Storage** and create a new **Postgres** database.
-2. Link it to your project. This sets the `POSTGRES_...` variables automatically.
-3. To push the initial schema, you can run this locally if you have the connection string, or rely on the build script if configured.
-   - **Recommended**: Connect locally to the Vercel DB and run `npx prisma db push`.
-   - OR, in Vercel Deployment, adding a Build Command hook: `npx prisma db push && next build` (Use with caution in production).
+2.  **Generate Prisma Client**:
+    ```bash
+    npx prisma generate
+    ```
 
-## 4. Initial Setup
+3.  **Database Migration**:
+    Push your schema to the database.
+    ```bash
+    npx prisma db push
+    ```
 
-1. Deploy the application.
-2. Go to `/admin` to access the dashboard.
-3. Default password: `admin123` (Change this in the code `lib/store.tsx` or move to Env var for better security).
-4. **Create your first Event**: Go to the "Events" tab.
-5. **Polls & Q&A**: Will be available dynamically for each event.
+4.  **Build the Application**:
+    ```bash
+    npm run build
+    ```
 
-## 5. Troubleshooting
+5.  **Start the Server**:
+    ```bash
+    npm start
+    ```
+    The application will run on `http://localhost:3000` (or `PORT` env if set).
 
-- **"Failed to fetch events"**: Ensure the database is connected and schema is pushed (`npx prisma db push`).
-- **Email not sending**: Verify Brevo API key and Sender Email (must be verified in Brevo).
+## 4. Deploying to Vercel (Recommended)
+
+1.  Push your code to a GitHub repository.
+2.  Import the project into Vercel.
+3.  Vercel will detect Next.js.
+4.  Add the **Environment Variables** in the Vercel Project Settings.
+5.  **Database**: You can use Vercel Postgres storage directly, which automatically sets the `POSTGRES_...` variables.
+6.  Click **Deploy**.
+
+## 5. Persistent Storage Note
+
+Since this application uses some in-memory storage fallback for demo purposes or strictly client-side `localStorage` (like Team Members currently), ensure you have a proper database connected for production use to persist:
+- Team Members
+- Tickets
+- Events
+
+*Note: The current implementation includes fallbacks to memory/local storage, but a real database connection is strongly recommended for production stability.*

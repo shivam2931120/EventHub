@@ -19,6 +19,10 @@ export const metadata: Metadata = {
     description: "Secure event ticketing with QR code verification and instant check-in",
     type: "website",
   },
+  icons: {
+    icon: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export default function RootLayout({

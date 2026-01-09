@@ -43,11 +43,23 @@ model Event {
   earlyBirdPrice   Int     @default(0)
   earlyBirdDeadline String?
   sendReminders    Boolean @default(false)
+  
+  // Certificate settings
+  certificateTemplate String?  // Path to template PDF
+  certificateSettings Json?    // {nameX, nameY, fontSize, fontColor, fontFamily}
+  
+  // Specific templates for different roles
+  certificateParticipantTemplate String?
+  certificateVolunteerTemplate String?
+  certificateWinnerTemplate    String?
+  certificateRunnerUpTemplate  String?
 
-  tickets     Ticket[]
-  polls       Question[]
-  photos      Photo[]
-  reviews     Review[]
+  tickets      Ticket[]
+  polls        Question[]
+  photos       Photo[]
+  reviews      Review[]
+  groups       Group[]
+  certificates Certificate[]
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -73,6 +85,10 @@ model Ticket {
   // Multi-ticket support
   purchaseGroupId String?   // To group tickets bought together
   
+  // Group registration support
+  groupId         String?
+  group           Group?    @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -80,6 +96,40 @@ model Ticket {
   @@index([status])
   @@index([email])
   @@index([razorpayOrderId])
+  @@index([groupId])
+}
+
+model Group {
+  id           String   @id @default(uuid())
+  name         String   // Organization/Team name
+  contactName  String   // Primary contact person
+  contactEmail String
+  contactPhone String?
+  eventId      String
+  event        Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  tickets      Ticket[]
+  discount     Int      @default(0) // Group discount percentage
+  notes        String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@index([eventId])
+}
+
+model Certificate {
+  id              String   @id @default(uuid())
+  eventId         String
+  event           Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name            String   // Recipient name
+  email           String?
+  type            String   @default("participant") // participant, volunteer, winner
+  downloadUrl     String?
+  
+  createdAt       DateTime @default(now())
+  
+  @@index([eventId])
+  @@index([type])
 }
 
 model Question {
@@ -134,5 +184,6 @@ model Review {
   
   @@index([eventId])
 }
+
 
 

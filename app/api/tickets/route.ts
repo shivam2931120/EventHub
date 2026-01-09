@@ -60,10 +60,17 @@ export async function POST(req: NextRequest) {
 
     // Create tickets for all attendees
     const ticketIds: string[] = [];
+    const tokens: string[] = [];
 
     for (let i = 0; i < attendees.length; i++) {
       const attendee = attendees[i];
       let ticketId: string;
+      // Generate token for free tickets
+      const token = body.isFree
+        ? require('crypto').createHmac('sha256', process.env.TICKET_SECRET_KEY || 'default-secret-key-for-demo')
+          .update(`ticket-${Date.now()}-${i}`)
+          .digest('hex')
+        : null;
 
       try {
         const ticket = await prisma.ticket.create({
@@ -72,7 +79,8 @@ export async function POST(req: NextRequest) {
             email: attendee.email || body.email || null,
             phone: attendee.phone || body.phone || null,
             eventId: body.eventId,
-            status: 'pending',
+            status: body.isFree ? 'paid' : 'pending', // Free tickets are auto-confirmed
+            token: token,
           },
         });
         ticketId = ticket.id;
@@ -86,8 +94,8 @@ export async function POST(req: NextRequest) {
           email: attendee.email || body.email || null,
           phone: attendee.phone || body.phone || null,
           eventId: body.eventId,
-          status: 'pending',
-          token: null,
+          status: body.isFree ? 'paid' : 'pending',
+          token: token,
           checkedIn: false,
           createdAt: new Date(),
         });
@@ -95,6 +103,39 @@ export async function POST(req: NextRequest) {
       }
 
       ticketIds.push(ticketId);
+      if (token) tokens.push(token);
+    }
+
+    // Send confirmation email for FREE tickets
+    if (body.isFree && ticketIds.length > 0) {
+      const primaryEmail = attendees[0]?.email || body.email;
+      if (primaryEmail) {
+        try {
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+          console.log('Sending free ticket confirmation email to:', primaryEmail);
+
+          fetch(`${baseUrl}/api/email/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              to: primaryEmail,
+              ticketId: ticketIds[0],
+              token: tokens[0],
+              eventName: eventName || 'Event',
+              attendeeName: attendees[0]?.name || 'Guest',
+              eventDate: body.eventDate || 'TBA',
+              venue: body.venue || 'TBA',
+              amountPaid: 0,
+              transactionId: 'FREE',
+              orderId: 'FREE-' + ticketIds[0],
+              paymentDate: new Date().toISOString(),
+              paymentMode: 'Free Registration',
+            }),
+          }).catch(err => console.warn('Email send failed:', err));
+        } catch (emailError) {
+          console.warn('Email sending error:', emailError);
+        }
+      }
     }
 
     return NextResponse.json({

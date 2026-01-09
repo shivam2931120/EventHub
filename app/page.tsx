@@ -77,6 +77,13 @@ export default function Home() {
           <section className="relative py-20 px-4 overflow-hidden">
             <div className="absolute inset-0 bg-gradient-to-br from-red-900/20 via-transparent to-transparent" />
             <div className="max-w-4xl mx-auto text-center relative">
+              <div className="flex justify-center mb-8">
+                <div className="w-24 h-24 bg-gradient-to-br from-red-600 to-red-800 rounded-3xl p-1 shadow-2xl shadow-red-900/50 rotate-3 hover:rotate-0 transition-transform duration-500">
+                  <div className="w-full h-full bg-black rounded-2xl overflow-hidden relative">
+                    <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
+                  </div>
+                </div>
+              </div>
               <div className="inline-flex items-center gap-2 bg-red-900/30 text-red-400 px-4 py-2 rounded-full text-sm font-medium mb-6">
                 <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                 Live Events

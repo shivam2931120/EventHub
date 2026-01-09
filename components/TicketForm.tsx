@@ -172,6 +172,8 @@ export default function TicketForm() {
           name: attendees[0].name,
           email: attendees[0].email || formData.email,
           phone: attendees[0].phone || formData.phone,
+          // Mark as free if no payment needed
+          isFree: totalAmount === 0,
         }),
       });
 
@@ -186,6 +188,13 @@ export default function TicketForm() {
       }
 
       const ticketData = await ticketRes.json();
+
+      // If event is FREE, skip payment and go directly to ticket page
+      if (totalAmount === 0) {
+        showToast('Registration successful! Check your email for ticket.', 'success');
+        window.location.href = `/ticket/${ticketData.ticketId}?success=true`;
+        return;
+      }
 
       // Create Razorpay order with total amount
       const orderRes = await fetch('/api/razorpay/order', {

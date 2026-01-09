@@ -31,9 +31,9 @@ export async function POST(request: NextRequest) {
         let eventName = 'Event Ticket';
 
         // If no amount passed, calculate from ticket/event
-        if (!orderAmount) {
+        if (orderAmount === undefined || orderAmount === null) {
             let ticket: any = null;
-            let eventPrice = 30000; // Default ₹300
+            let eventPrice = 0; // Default to free if no price found
 
             try {
                 ticket = await prisma.ticket.findUnique({
@@ -42,11 +42,11 @@ export async function POST(request: NextRequest) {
                 });
 
                 if (ticket?.event) {
-                    eventPrice = ticket.event.price;
+                    eventPrice = ticket.event.price || 0;
                     eventName = ticket.event.name;
                 }
             } catch (e) {
-                console.log('Database not available, using fallback');
+                console.log('Database not available, using amount from request');
             }
 
             // Calculate total amount
@@ -104,4 +104,8 @@ export async function POST(request: NextRequest) {
     }
 }
 
-export { ticketOrders };
+// Internal use only
+const ticketOrdersExport = ticketOrders; // Keep it if needed for debugging or future export, but remove export from route
+// Actually, just remove the export statement.
+// export { ticketOrders };  <-- Delete this line
+

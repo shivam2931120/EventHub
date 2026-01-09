@@ -3,13 +3,20 @@ import nodemailer from 'nodemailer';
 // Create Brevo SMTP transporter
 // Your API key format (xsmtpsib-...) is an SMTP key, so we use nodemailer
 function createBrevoTransporter() {
+    // Fallback: Use sender email if SMTP login is not explicitly set
+    const user = process.env.BREVO_SMTP_LOGIN || process.env.BREVO_SENDER_EMAIL || '';
+
+    // Log warning if API key is missing
+    if (!process.env.BREVO_API_KEY) {
+        console.warn('BREVO_API_KEY is not set. Emails will fail.');
+    }
+
     return nodemailer.createTransport({
         host: 'smtp-relay.brevo.com',
         port: 587,
         secure: false, // true for 465, false for other ports
         auth: {
-            // Brevo SMTP requires their SMTP login email, not the sender email
-            user: process.env.BREVO_SMTP_LOGIN || '',
+            user: user,
             pass: process.env.BREVO_API_KEY || '',
         },
     });

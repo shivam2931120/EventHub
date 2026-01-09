@@ -55,6 +55,10 @@ export const ticketStorage = {
         return Array.from(globalTickets.values()).find(t => t.razorpayOrderId === orderId);
     },
 
+    findByToken(token: string): InMemoryTicket | undefined {
+        return Array.from(globalTickets.values()).find(t => t.token === token);
+    },
+
     has(id: string): boolean {
         return globalTickets.has(id);
     },

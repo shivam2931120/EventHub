@@ -58,6 +58,18 @@ export interface Event {
     earlyBirdDeadline: string;
     // Event Reminders
     sendReminders: boolean;
+    // Certificate Templates
+    certificateTemplate?: string;
+    certificateSettings?: {
+        nameX?: number;
+        nameY?: number;
+        fontSize?: number;
+        fontColor?: string;
+    };
+    certificateParticipantTemplate?: string;
+    certificateVolunteerTemplate?: string;
+    certificateWinnerTemplate?: string;
+    certificateRunnerUpTemplate?: string;
 }
 
 export interface Ticket {
@@ -89,6 +101,7 @@ export interface TeamMember {
     name: string;
     email: string;
     role: TeamRole;
+    password?: string; // For login
     eventIds: string[]; // Empty array = all events, specific IDs = only those events
     createdAt: string;
     lastActive?: string;
@@ -247,7 +260,7 @@ export const DEFAULT_SITE_SETTINGS: SiteSettings = {
     showEventCalendar: true,
     showEventCountdown: true,
     // Ticket Design defaults
-    ticketLogoUrl: '',
+    ticketLogoUrl: '/logo.png',
     ticketBgColor: '#111111',
     ticketTextColor: '#ffffff',
     ticketAccentColor: '#dc2626',
@@ -448,8 +461,10 @@ interface AppContextType {
     addToWaitlist: (entry: WaitlistEntry) => void;
     removeFromWaitlist: (id: string) => void;
     notifyWaitlist: (eventId: string) => void;
-    loginAdmin: (password: string) => boolean;
-    logoutAdmin: () => void;
+    notifications: any[];
+    currentUser: TeamMember | null;
+    login: (email: string, password: string) => boolean;
+    logout: () => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -466,12 +481,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const [surveyResponses, setSurveyResponses] = useState<SurveyResponse[]>(DEFAULT_SURVEY_RESPONSES);
     const [promoCodes, setPromoCodes] = useState<PromoCode[]>(DEFAULT_PROMO_CODES);
     const [waitlist, setWaitlist] = useState<WaitlistEntry[]>(DEFAULT_WAITLIST);
-    const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+
+    const [currentUser, setCurrentUser] = useState<TeamMember | null>(null);
+    // Backward compatibility for components checking boolean
+    const isAdminLoggedIn = !!currentUser;
 
     useEffect(() => {
-        // Load admin session
-        const adminSession = localStorage.getItem('adminLoggedIn');
-        if (adminSession === 'true') setIsAdminLoggedIn(true);
+        // Load team members
+        const savedMembers = localStorage.getItem('teamMembers');
+        if (savedMembers) {
+            try {
+                setTeamMembers(JSON.parse(savedMembers));
+            } catch (e) { console.error('Failed to parse team members', e); }
+        }
+
+        // Load session
+        const sessionUser = localStorage.getItem('currentUser');
+        if (sessionUser) {
+            try {
+                setCurrentUser(JSON.parse(sessionUser));
+            } catch (e) {
+                // If invalid, clear it
+                localStorage.removeItem('currentUser');
+            }
+        }
+
 
         // Load site settings from localStorage
         const savedSettings = localStorage.getItem('siteSettings');
@@ -536,7 +570,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 const res = await fetch('/api/events');
                 if (res.ok) {
                     const data = await res.json();
-                    setEvents(data);
+                    // Handle both array or {events: [...]} response formats
+                    const eventsArray = Array.isArray(data) ? data : (data.events || []);
+                    // Filter out any null/undefined entries and ensure date is string
+                    const cleanedEvents = eventsArray
+                        .filter((e: any) => e != null && e.id)
+                        .map((e: any) => ({
+                            ...e,
+                            date: typeof e.date === 'string' ? e.date : new Date(e.date).toISOString(),
+                        }));
+                    setEvents(cleanedEvents);
                 }
             } catch (error) {
                 console.error('Failed to load events', error);
@@ -568,7 +611,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             });
             if (res.ok) {
                 const newEvent = await res.json();
-                setEvents(prev => [newEvent, ...prev]);
+                // Ensure date is string formatted
+                const cleanedEvent = {
+                    ...newEvent,
+                    date: typeof newEvent.date === 'string' ? newEvent.date : new Date(newEvent.date).toISOString(),
+                };
+                setEvents(prev => [cleanedEvent, ...prev.filter(e => e != null)]);
             }
         } catch (error) {
             console.error('Failed to add event', error);
@@ -584,7 +632,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
             });
             if (res.ok) {
                 const updated = await res.json();
-                setEvents(prev => prev.map(e => e.id === id ? updated : e));
+                const cleanedEvent = {
+                    ...updated,
+                    date: typeof updated.date === 'string' ? updated.date : new Date(updated.date).toISOString(),
+                };
+                setEvents(prev => prev.filter(e => e != null).map(e => e.id === id ? cleanedEvent : e));
             }
         } catch (error) {
             console.error('Failed to update event', error);
@@ -594,20 +646,73 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const deleteEvent = async (id: string) => {
         try {
             await fetch(`/api/events?id=${id}`, { method: 'DELETE' });
-            setEvents(prev => prev.filter(e => e.id !== id));
+            setEvents(prev => prev.filter(e => e != null && e.id !== id));
         } catch (error) {
             console.error('Failed to delete event', error);
         }
     };
 
-    const duplicateEvent = async (id: string) => {
-        const event = events.find(e => e.id === id);
+    const duplicateEvent = async (id: string, dateOffset?: number) => {
+        const event = events.filter(e => e != null).find(e => e.id === id);
         if (event) {
+            // Generate new unique ID
+            const newId = `event-${Date.now()}`;
+
+            // Clone schedule items with new IDs
+            const clonedSchedule = (event.schedule || []).map((item, index) => ({
+                ...item,
+                id: `schedule-${newId}-${index}`,
+            }));
+
+            // Clone speakers with new IDs
+            const clonedSpeakers = (event.speakers || []).map((speaker, index) => ({
+                ...speaker,
+                id: `speaker-${newId}-${index}`,
+            }));
+
+            // Clone sponsors with new IDs
+            const clonedSponsors = (event.sponsors || []).map((sponsor, index) => ({
+                ...sponsor,
+                id: `sponsor-${newId}-${index}`,
+            }));
+
+            // Calculate new date if offset provided
+            let newDate = event.date;
+            let newRegistrationDeadline = event.registrationDeadline;
+            let newEarlyBirdDeadline = event.earlyBirdDeadline;
+
+            if (dateOffset) {
+                const originalDate = new Date(event.date);
+                originalDate.setDate(originalDate.getDate() + dateOffset);
+                newDate = originalDate.toISOString().split('T')[0];
+
+                if (event.registrationDeadline) {
+                    const regDate = new Date(event.registrationDeadline);
+                    regDate.setDate(regDate.getDate() + dateOffset);
+                    newRegistrationDeadline = regDate.toISOString().split('T')[0];
+                }
+
+                if (event.earlyBirdDeadline) {
+                    const ebDate = new Date(event.earlyBirdDeadline);
+                    ebDate.setDate(ebDate.getDate() + dateOffset);
+                    newEarlyBirdDeadline = ebDate.toISOString().split('T')[0];
+                }
+            }
+
             const newEvent = {
                 ...event,
-                id: `event-${Date.now()}`,
+                id: newId,
                 name: `${event.name} (Copy)`,
+                date: newDate,
+                registrationDeadline: newRegistrationDeadline,
+                earlyBirdDeadline: newEarlyBirdDeadline,
                 soldCount: 0,
+                schedule: clonedSchedule,
+                speakers: clonedSpeakers,
+                sponsors: clonedSponsors,
+                // Reset certificate templates to allow new customization
+                certificateTemplate: event.certificateTemplate,
+                certificateSettings: event.certificateSettings,
             };
             await addEvent(newEvent);
         }
@@ -647,25 +752,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const loginAdmin = (password: string): boolean => {
-        if (password === 'admin123') {
-            setIsAdminLoggedIn(true);
-            localStorage.setItem('adminLoggedIn', 'true');
+    const login = (email: string, password: string): boolean => {
+        // Super Admin hardcoded
+        if (email.toLowerCase() === 'admin@eventhub.com' && password === 'admin123') {
+            const adminUser: TeamMember = {
+                id: 'super-admin',
+                name: 'Super Admin',
+                email: 'admin@eventhub.com',
+                role: 'admin',
+                eventIds: [],
+                createdAt: new Date().toISOString()
+            };
+            setCurrentUser(adminUser);
+            localStorage.setItem('currentUser', JSON.stringify(adminUser));
             return true;
         }
+
+        // Check team members
+        const member = teamMembers.find(m => m.email.toLowerCase() === email.toLowerCase() && m.password === password);
+        if (member) {
+            setCurrentUser(member);
+            localStorage.setItem('currentUser', JSON.stringify(member));
+            return true;
+        }
+
         return false;
     };
 
-    const logoutAdmin = () => {
-        setIsAdminLoggedIn(false);
-        localStorage.removeItem('adminLoggedIn');
+    // Keep legacy function for compatibility if needed, but redirect to new login
+    const loginAdmin = (password: string) => login('admin@eventhub.com', password);
+
+    const logout = () => {
+        setCurrentUser(null);
+        localStorage.removeItem('currentUser');
+        localStorage.removeItem('adminLoggedIn'); // Cleanup old
     };
 
-    const addTeamMember = (member: TeamMember) => setTeamMembers([member, ...teamMembers]);
-    const updateTeamMember = (id: string, data: Partial<TeamMember>) => {
-        setTeamMembers(teamMembers.map(m => m.id === id ? { ...m, ...data } : m));
+    const logoutAdmin = logout;
+
+    const addTeamMember = (member: TeamMember) => {
+        const newMembers = [member, ...teamMembers];
+        setTeamMembers(newMembers);
+        localStorage.setItem('teamMembers', JSON.stringify(newMembers));
     };
-    const removeTeamMember = (id: string) => setTeamMembers(teamMembers.filter(m => m.id !== id));
+    const updateTeamMember = (id: string, data: Partial<TeamMember>) => {
+        const newMembers = teamMembers.map(m => m.id === id ? { ...m, ...data } : m);
+        setTeamMembers(newMembers);
+        localStorage.setItem('teamMembers', JSON.stringify(newMembers));
+    };
+    const removeTeamMember = (id: string) => {
+        const newMembers = teamMembers.filter(m => m.id !== id);
+        setTeamMembers(newMembers);
+        localStorage.setItem('teamMembers', JSON.stringify(newMembers));
+    };
 
     const updateSiteSettings = (data: Partial<SiteSettings>) => {
         const newSettings = { ...siteSettings, ...data };
@@ -756,7 +895,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             updateEmailTemplate, addSurvey, updateSurvey, deleteSurvey, addSurveyResponse,
             addPromoCode, updatePromoCode, deletePromoCode, validatePromoCode,
             addToWaitlist, removeFromWaitlist, notifyWaitlist,
-            loginAdmin, logoutAdmin,
+            login, logout, currentUser, notifications: [],
         }}>
             {children}
         </AppContext.Provider>

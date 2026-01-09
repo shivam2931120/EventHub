@@ -6,36 +6,60 @@ import { useToast } from '@/components/Toaster';
 import { useRouter } from 'next/navigation';
 import AttendeeInsights from '@/components/AttendeeInsights';
 import AdminPollManager from '@/components/AdminPollManager';
+import GroupManager from '@/components/GroupManager';
+import CertificateManager from '@/components/CertificateManager';
+import EmailTemplateEditor from '@/components/EmailTemplateEditor';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
     PieChart, Pie, Cell, AreaChart, Area,
 } from 'recharts';
+import StatCard from '@/components/admin/StatCard';
+import ChartCard from '@/components/admin/ChartCard';
+import EventModal from '@/components/admin/EventModal';
 
 export default function AdminPage() {
     const router = useRouter();
-    const { events, tickets, teamMembers, siteSettings, festivals, emailTemplates, surveys, promoCodes, waitlist, isAdminLoggedIn, loginAdmin, logoutAdmin, addEvent, updateEvent, deleteEvent, duplicateEvent, addTicket, updateTicket, deleteTicket, addTeamMember, updateTeamMember, removeTeamMember, updateSiteSettings, addFestival, updateFestival, deleteFestival, updateEmailTemplate, addSurvey, updateSurvey, deleteSurvey, addPromoCode, updatePromoCode, deletePromoCode, addToWaitlist, removeFromWaitlist, notifyWaitlist } = useApp();
+    const { events, tickets, teamMembers, siteSettings, festivals, emailTemplates, surveys, promoCodes, waitlist, currentUser, login, logout, addEvent, updateEvent, deleteEvent, duplicateEvent, addTicket, updateTicket, deleteTicket, addTeamMember, updateTeamMember, removeTeamMember, updateSiteSettings, addFestival, updateFestival, deleteFestival, updateEmailTemplate, addSurvey, updateSurvey, deleteSurvey, addPromoCode, updatePromoCode, deletePromoCode, addToWaitlist, removeFromWaitlist, notifyWaitlist } = useApp();
     const { showToast } = useToast();
 
-    const [activeTab, setActiveTab] = useState<'overview' | 'events' | 'attendees' | 'team' | 'festivals' | 'emails' | 'surveys' | 'settings' | 'layout' | 'promo' | 'analytics' | 'polls'>('overview');
+    const [activeTab, setActiveTab] = useState<'overview' | 'events' | 'attendees' | 'team' | 'festivals' | 'emails' | 'surveys' | 'settings' | 'layout' | 'promo' | 'analytics' | 'polls' | 'groups' | 'certificates'>('overview');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [showTeamModal, setShowTeamModal] = useState(false);
+    const [teamFormData, setTeamFormData] = useState({ name: '', email: '', password: '', role: 'staff' as TeamRole });
     const [showEventModal, setShowEventModal] = useState(false);
     const [editingEvent, setEditingEvent] = useState<Event | null>(null);
     const [selectedEvent, setSelectedEvent] = useState<string>('all');
     const [attendeeSearch, setAttendeeSearch] = useState('');
     const [checkInFilter, setCheckInFilter] = useState<'all' | 'checked' | 'unchecked'>('all');
-    const [liveStats, setLiveStats] = useState({ online: 127, checkinsToday: 23 });
+    // const [liveStats, setLiveStats] = useState({ online: 0, checkinsToday: 0 });
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importCsvData, setImportCsvData] = useState('');
+    const [isImporting, setIsImporting] = useState(false);
 
     useEffect(() => {
-        const interval = setInterval(() => {
-            setLiveStats({ online: Math.floor(100 + Math.random() * 50), checkinsToday: Math.floor(20 + Math.random() * 10) });
-        }, 5000);
-        return () => clearInterval(interval);
+        // Real-time stats logic would go here
     }, []);
+
+    const permittedTabs = currentUser ? (
+        currentUser.role === 'admin' ? ['overview', 'events', 'attendees', 'groups', 'certificates', 'team', 'polls', 'festivals', 'emails', 'surveys', 'layout', 'promo', 'settings', 'analytics'] :
+            currentUser.role === 'manager' ? ['overview', 'events', 'attendees', 'groups', 'certificates', 'polls', 'festivals', 'promo', 'analytics'] :
+                currentUser.role === 'staff' ? ['overview', 'events', 'attendees'] :
+                    []
+    ) : [];
+
+    useEffect(() => {
+        if (currentUser?.role === 'scanner') {
+            router.push('/checkin');
+        } else if (currentUser && !permittedTabs.includes(activeTab as any) && permittedTabs.length > 0) {
+            setActiveTab(permittedTabs[0] as any);
+        }
+    }, [currentUser, activeTab]);
 
     const handleLogin = (e: React.FormEvent) => {
         e.preventDefault();
-        if (loginAdmin(password)) showToast('Login successful!', 'success');
-        else showToast('Invalid password', 'error');
+        if (login(email, password)) showToast('Login successful!', 'success');
+        else showToast('Invalid email or password', 'error');
         setPassword('');
     };
 
@@ -58,10 +82,10 @@ export default function AdminPage() {
         return sum + (event?.price || 0);
     }, 0);
 
-    const salesByEvent = events.map(event => ({
-        name: event.name.split(' ')[0],
+    const salesByEvent = events.filter(event => event != null).map(event => ({
+        name: event.name?.split(' ')[0] || 'Unknown',
         tickets: tickets.filter(t => t.eventId === event.id && t.status === 'paid').length,
-        revenue: (tickets.filter(t => t.eventId === event.id && t.status === 'paid').length * event.price) / 100,
+        revenue: (tickets.filter(t => t.eventId === event.id && t.status === 'paid').length * (event.price || 0)) / 100,
     }));
 
     const checkInData = [{ name: 'Checked In', value: checkedIn }, { name: 'Pending', value: paidTickets - checkedIn }];
@@ -124,39 +148,111 @@ export default function AdminPage() {
         showToast('Event duplicated!', 'success');
     };
 
-    const exportCSV = () => {
-        const headers = ['Name', 'Email', 'Phone', 'Event', 'Status', 'Checked In', 'Date'];
-        const rows = filteredTickets.map(t => {
-            const event = events.find(e => e.id === t.eventId);
-            return [t.name, t.email, t.phone, event?.name || '', t.status, t.checkedIn ? 'Yes' : 'No', new Date(t.createdAt).toLocaleString()];
-        });
-        const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `tickets-${new Date().toISOString().split('T')[0]}.csv`;
-        a.click();
-        showToast('CSV exported!', 'success');
+    const handleManualCheckIn = async (ticketId: string, currentStatus: boolean) => {
+        try {
+            const response = await fetch('/api/checkin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ticketId,
+                    action: currentStatus ? 'undo' : 'checkin'
+                }),
+            });
+
+            if (response.ok) {
+                // Update local state
+                updateTicket(ticketId, { checkedIn: !currentStatus });
+                showToast(currentStatus ? 'Check-in undone' : 'Checked in successfully!', 'success');
+            } else {
+                const data = await response.json();
+                showToast(data.error || 'Check-in failed', 'error');
+            }
+        } catch (error) {
+            showToast('Check-in failed', 'error');
+        }
     };
 
-    if (!isAdminLoggedIn) {
+    const handleExportExcel = () => {
+        import('xlsx').then(XLSX => {
+            const data = filteredTickets.map(t => {
+                const event = events.find(e => e.id === t.eventId);
+                return {
+                    'Ticket ID': t.id,
+                    'Name': t.name,
+                    'Email': t.email,
+                    'Phone': t.phone,
+                    'Event': event?.name || 'Unknown',
+                    'Price': (event?.price || 0) / 100,
+                    'Status': t.status,
+                    'Checked In': t.checkedIn ? 'Yes' : 'No',
+                    'Purchase Date': new Date(t.createdAt).toLocaleString()
+                };
+            });
+
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Attendees");
+            XLSX.writeFile(wb, `eventhub-attendees-${new Date().toISOString().split('T')[0]}.xlsx`);
+            showToast('Excel file exported!', 'success');
+        });
+    };
+
+    const handleImportAttendees = async () => {
+        if (!importCsvData.trim()) {
+            showToast('Please paste CSV data', 'error');
+            return;
+        }
+        if (selectedEvent === 'all') {
+            showToast('Please select a specific event filter first', 'error');
+            return;
+        }
+
+        setIsImporting(true);
+        try {
+            const res = await fetch('/api/attendees/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    eventId: selectedEvent,
+                    csvData: importCsvData
+                })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`Imported ${data.results.success} attendees!`, 'success');
+                if (data.results.failed > 0) {
+                    showToast(`${data.results.failed} failed to import`, 'error');
+                }
+                setShowImportModal(false);
+                setImportCsvData('');
+                // Refresh logic would go here if not using realtime/context
+            } else {
+                showToast(data.error || 'Import failed', 'error');
+            }
+        } catch (error) {
+            showToast('Import failed', 'error');
+        } finally {
+            setIsImporting(false);
+        }
+    };
+
+    if (!currentUser) {
         return (
             <main className="min-h-screen bg-black flex items-center justify-center p-4">
                 <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 w-full max-w-md">
                     <div className="text-center mb-8">
-                        <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl mb-4">
-                            <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                            </svg>
+                        <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-red-600 to-red-800 rounded-2xl mb-4 overflow-hidden">
+                            <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
                         </div>
                         <h1 className="text-2xl font-bold text-white mb-2">Admin Login</h1>
                     </div>
                     <form onSubmit={handleLogin} className="space-y-4">
-                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" className="w-full px-4 py-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-center text-lg tracking-widest" autoFocus />
+                        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" className="w-full px-4 py-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-center text-lg tracking-widest" autoFocus />
+                        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Password" className="w-full px-4 py-4 bg-zinc-800 border border-zinc-700 rounded-xl text-white text-center text-lg tracking-widest" />
                         <button type="submit" className="w-full py-4 bg-red-600 text-white rounded-xl hover:bg-red-700 font-semibold">Login</button>
                     </form>
-                    <p className="text-center text-zinc-500 text-xs mt-6">Password: admin123</p>
+                    <p className="text-center text-zinc-500 text-xs mt-6">Default: admin@eventhub.com / admin123</p>
                     <a href="/" className="block text-center text-zinc-400 hover:text-white mt-4 text-sm">← Back</a>
                 </div>
             </main>
@@ -169,31 +265,25 @@ export default function AdminPage() {
                 {/* Header */}
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6">
                     <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-red-800 rounded-xl flex items-center justify-center">
-                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                            </svg>
+                        <div className="w-12 h-12 bg-gradient-to-br from-red-600 to-red-800 rounded-xl flex items-center justify-center overflow-hidden">
+                            <img src="/logo.png" alt="Logo" className="w-full h-full object-cover" />
                         </div>
                         <div>
                             <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
-                            <div className="flex items-center gap-4 text-sm">
-                                <span className="flex items-center gap-1 text-green-400"><span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>{liveStats.online} online</span>
-                                <span className="text-zinc-500">{liveStats.checkinsToday} check-ins today</span>
-                            </div>
                         </div>
                     </div>
                     <div className="flex items-center gap-3 mt-4 md:mt-0">
                         <a href="/" className="text-zinc-400 hover:text-white text-sm">← Home</a>
                         <a href="/checkin" className="text-zinc-400 hover:text-white text-sm">Check-In</a>
-                        <button onClick={logoutAdmin} className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 text-sm">Logout</button>
+                        <button onClick={logout} className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 text-sm">Logout</button>
                     </div>
                 </div>
 
                 {/* Tabs */}
                 <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
-                    {(['overview', 'events', 'attendees', 'team', 'polls', 'festivals', 'emails', 'surveys', 'layout', 'promo', 'settings', 'analytics'] as const).map(tab => (
-                        <button key={tab} onClick={() => setActiveTab(tab)} className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${activeTab === tab ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
-                            {tab === 'promo' ? 'Promo Codes' : tab === 'polls' ? 'Polls & Q&A' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                    {permittedTabs.map(tab => (
+                        <button key={tab} onClick={() => setActiveTab(tab as any)} className={`px-4 py-2 rounded-lg font-medium whitespace-nowrap transition-colors ${activeTab === tab ? 'bg-red-600 text-white' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
+                            {tab === 'promo' ? 'Promo Codes' : tab === 'polls' ? 'Polls & Q&A' : tab === 'groups' ? 'Groups' : tab === 'certificates' ? 'Certificates' : tab.charAt(0).toUpperCase() + tab.slice(1)}
                         </button>
                     ))}
                 </div>
@@ -202,9 +292,9 @@ export default function AdminPage() {
                 {activeTab === 'overview' && (
                     <div className="space-y-6">
                         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                            <StatCard icon="ticket" label="Total Tickets" value={totalTickets} color="blue" />
-                            <StatCard icon="check" label="Paid" value={paidTickets} color="green" />
-                            <StatCard icon="checkin" label="Checked In" value={checkedIn} color="purple" />
+                            <StatCard icon="ticket" label="Total Tickets" value={totalTickets} color="red" />
+                            <StatCard icon="check" label="Paid" value={paidTickets} color="red" />
+                            <StatCard icon="checkin" label="Checked In" value={checkedIn} color="red" />
                             <StatCard icon="money" label="Revenue" value={`₹${(totalRevenue / 100).toLocaleString()}`} color="red" />
                         </div>
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -212,7 +302,7 @@ export default function AdminPage() {
                                 <BarChart data={salesByEvent}><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis dataKey="name" stroke="#888" fontSize={12} /><YAxis stroke="#888" fontSize={12} /><Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }} /><Bar dataKey="revenue" fill="#dc2626" radius={[4, 4, 0, 0]} /></BarChart>
                             </ChartCard>
                             <ChartCard title="Check-in Rate">
-                                <PieChart><Pie data={checkInData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value"><Cell fill="#22c55e" /><Cell fill="#71717a" /></Pie><Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }} /></PieChart>
+                                <PieChart><Pie data={checkInData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value"><Cell fill="#dc2626" /><Cell fill="#333" /></Pie><Tooltip contentStyle={{ backgroundColor: '#1a1a1a', border: '1px solid #333', borderRadius: '8px' }} /></PieChart>
                             </ChartCard>
                         </div>
                     </div>
@@ -229,7 +319,7 @@ export default function AdminPage() {
                             </button>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {events.map(event => {
+                            {events.filter(event => event != null).map(event => {
                                 const categoryStyle = CATEGORY_COLORS[event.category] || CATEGORY_COLORS.other;
                                 const capacityPercent = Math.round((event.soldCount / event.capacity) * 100);
                                 return (
@@ -285,25 +375,17 @@ export default function AdminPage() {
                                 <p className="text-zinc-400 text-sm">View and manage event attendees</p>
                             </div>
                             <div className="flex gap-2">
-                                <button onClick={() => {
-                                    const headers = ['Ticket ID', 'Name', 'Email', 'Phone', 'Event', 'Status', 'Checked In', 'Amount Paid', 'Purchase Date'];
-                                    const rows = filteredTickets.map(t => {
-                                        const event = events.find(e => e.id === t.eventId);
-                                        return [t.id, t.name, t.email, t.phone, event?.name || '', t.status, t.checkedIn ? 'Yes' : 'No', `₹${((event?.price || 0) / 100).toFixed(2)}`, new Date(t.createdAt).toLocaleString()];
-                                    });
-                                    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-                                    const blob = new Blob([csv], { type: 'text/csv' });
-                                    const url = URL.createObjectURL(blob);
-                                    const a = document.createElement('a');
-                                    a.href = url;
-                                    a.download = `attendees-${new Date().toISOString().split('T')[0]}.csv`;
-                                    a.click();
-                                    showToast('Attendee list exported!', 'success');
-                                }} className="px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 flex items-center gap-2">
+                                <button onClick={handleExportExcel} className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded-xl hover:bg-zinc-700 flex items-center gap-2">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                     </svg>
-                                    Export CSV
+                                    Export Excel
+                                </button>
+                                <button onClick={() => setShowImportModal(true)} className="px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 flex items-center gap-2">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    Import CSV
                                 </button>
                             </div>
                         </div>
@@ -316,15 +398,15 @@ export default function AdminPage() {
                             </div>
                             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
                                 <p className="text-zinc-500 text-xs font-medium">Checked In</p>
-                                <p className="text-2xl font-bold text-green-400 mt-1">{tickets.filter(t => t.checkedIn).length}</p>
+                                <p className="text-2xl font-bold text-red-500 mt-1">{tickets.filter(t => t.checkedIn).length}</p>
                             </div>
                             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
                                 <p className="text-zinc-500 text-xs font-medium">Pending</p>
-                                <p className="text-2xl font-bold text-yellow-400 mt-1">{tickets.filter(t => !t.checkedIn).length}</p>
+                                <p className="text-2xl font-bold text-zinc-400 mt-1">{tickets.filter(t => !t.checkedIn).length}</p>
                             </div>
                             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
                                 <p className="text-zinc-500 text-xs font-medium">Check-in Rate</p>
-                                <p className="text-2xl font-bold text-blue-400 mt-1">{tickets.length > 0 ? Math.round((tickets.filter(t => t.checkedIn).length / tickets.length) * 100) : 0}%</p>
+                                <p className="text-2xl font-bold text-red-400 mt-1">{tickets.length > 0 ? Math.round((tickets.filter(t => t.checkedIn).length / tickets.length) * 100) : 0}%</p>
                             </div>
                         </div>
 
@@ -348,7 +430,7 @@ export default function AdminPage() {
                                 className="px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-xl text-white"
                             >
                                 <option value="all">All Events</option>
-                                {events.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                                {events.filter(e => e != null).map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                             </select>
                             <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
                                 <button
@@ -359,13 +441,13 @@ export default function AdminPage() {
                                 </button>
                                 <button
                                     onClick={() => setCheckInFilter('checked')}
-                                    className={`px-4 py-2 text-sm font-medium transition-colors ${checkInFilter === 'checked' ? 'bg-green-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+                                    className={`px-4 py-2 text-sm font-medium transition-colors ${checkInFilter === 'checked' ? 'bg-red-600 text-white' : 'text-zinc-400 hover:text-white'}`}
                                 >
                                     Checked In
                                 </button>
                                 <button
                                     onClick={() => setCheckInFilter('unchecked')}
-                                    className={`px-4 py-2 text-sm font-medium transition-colors ${checkInFilter === 'unchecked' ? 'bg-yellow-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+                                    className={`px-4 py-2 text-sm font-medium transition-colors ${checkInFilter === 'unchecked' ? 'bg-zinc-700 text-white' : 'text-zinc-400 hover:text-white'}`}
                                 >
                                     Pending
                                 </button>
@@ -440,12 +522,44 @@ export default function AdminPage() {
                                                         )}
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <button
-                                                            onClick={() => router.push(`/ticket/${ticket.id}`)}
-                                                            className="text-red-400 hover:text-red-300 text-sm"
-                                                        >
-                                                            View Ticket
-                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => handleManualCheckIn(ticket.id, ticket.checkedIn)}
+                                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${ticket.checkedIn
+                                                                    ? 'bg-yellow-900/50 text-yellow-400 hover:bg-yellow-900'
+                                                                    : 'bg-green-900/50 text-green-400 hover:bg-green-900'
+                                                                    }`}
+                                                            >
+                                                                {ticket.checkedIn ? 'Undo' : 'Check In'}
+                                                            </button>
+                                                            {ticket.email && (
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        try {
+                                                                            const res = await fetch(`/api/tickets/${ticket.id}/resend`, { method: 'POST' });
+                                                                            const data = await res.json();
+                                                                            if (res.ok) {
+                                                                                showToast('Email resent!', 'success');
+                                                                            } else {
+                                                                                showToast(data.error || 'Failed to resend', 'error');
+                                                                            }
+                                                                        } catch {
+                                                                            showToast('Failed to resend', 'error');
+                                                                        }
+                                                                    }}
+                                                                    className="px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-900/50 text-blue-400 hover:bg-blue-900 transition-colors"
+                                                                    title="Resend email"
+                                                                >
+                                                                    Resend
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                onClick={() => router.push(`/ticket/${ticket.id}`)}
+                                                                className="text-red-400 hover:text-red-300 text-sm"
+                                                            >
+                                                                View
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
@@ -467,15 +581,8 @@ export default function AdminPage() {
                             </div>
                             <button
                                 onClick={() => {
-                                    addTeamMember({
-                                        id: `team-${Date.now()}`,
-                                        name: 'New Member',
-                                        email: 'member@events.com',
-                                        role: 'staff',
-                                        eventIds: [],
-                                        createdAt: new Date().toISOString(),
-                                    });
-                                    showToast('Team member added!', 'success');
+                                    setTeamFormData({ name: '', email: '', password: '', role: 'staff' });
+                                    setShowTeamModal(true);
                                 }}
                                 className="px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700 flex items-center gap-2"
                             >
@@ -485,6 +592,76 @@ export default function AdminPage() {
                                 Add Member
                             </button>
                         </div>
+
+                        {/* Team Member Modal */}
+                        {showTeamModal && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md p-6">
+                                    <h3 className="text-xl font-bold text-white mb-4">Add Team Member</h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-1">Name</label>
+                                            <input type="text" value={teamFormData.name} onChange={e => setTeamFormData({ ...teamFormData, name: e.target.value })} className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white" placeholder="John Doe" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-1">Email</label>
+                                            <input type="email" value={teamFormData.email} onChange={e => setTeamFormData({ ...teamFormData, email: e.target.value })} className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white" placeholder="john@example.com" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-1">Password</label>
+                                            <input type="text" value={teamFormData.password} onChange={e => setTeamFormData({ ...teamFormData, password: e.target.value })} className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white" placeholder="Secret123" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-zinc-400 mb-1">Role</label>
+                                            <select value={teamFormData.role} onChange={e => setTeamFormData({ ...teamFormData, role: e.target.value as TeamRole })} className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-xl text-white">
+                                                <option value="manager">Manager</option>
+                                                <option value="staff">Staff</option>
+                                                <option value="scanner">Scanner</option>
+                                                <option value="admin">Admin</option>
+                                            </select>
+                                        </div>
+                                        <div className="flex gap-3 mt-6">
+                                            <button onClick={() => setShowTeamModal(false)} className="flex-1 px-4 py-2 bg-zinc-800 text-white rounded-xl hover:bg-zinc-700">Cancel</button>
+                                            <button onClick={async () => {
+                                                if (!teamFormData.name || !teamFormData.email || !teamFormData.password) return showToast('Please fill all fields', 'error');
+
+                                                // 1. Add to local state (optimistic)
+                                                addTeamMember({
+                                                    id: `team-${Date.now()}`,
+                                                    name: teamFormData.name,
+                                                    email: teamFormData.email,
+                                                    role: teamFormData.role,
+                                                    password: teamFormData.password,
+                                                    eventIds: [],
+                                                    createdAt: new Date().toISOString()
+                                                });
+
+                                                // 2. Send Invitation Email
+                                                try {
+                                                    showToast('Sending invitation...', 'info');
+                                                    const res = await fetch('/api/team/invite', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify(teamFormData)
+                                                    });
+                                                    const data = await res.json();
+
+                                                    if (res.ok) {
+                                                        showToast('Member added & email sent!', 'success');
+                                                    } else {
+                                                        showToast(`Member added, but email failed: ${data.error}`, 'error');
+                                                    }
+                                                } catch (e) {
+                                                    showToast('Member added, but failed to send email', 'error');
+                                                }
+
+                                                setShowTeamModal(false);
+                                            }} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-xl hover:bg-red-700">Add Member</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Role Legend */}
                         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
@@ -704,7 +881,7 @@ export default function AdminPage() {
                                                     defaultValue=""
                                                 >
                                                     <option value="" disabled>+ Add event to festival...</option>
-                                                    {events.filter(e => !festival.eventIds.includes(e.id)).map(event => (
+                                                    {events.filter(e => e != null && !festival.eventIds.includes(e.id)).map(event => (
                                                         <option key={event.id} value={event.id}>{event.name}</option>
                                                     ))}
                                                 </select>
@@ -796,6 +973,11 @@ export default function AdminPage() {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+
+                        {/* Advanced Email Template Editor */}
+                        <div className="mt-8 pt-8 border-t border-zinc-800">
+                            <EmailTemplateEditor />
                         </div>
                     </div>
                 )}
@@ -1957,8 +2139,21 @@ export default function AdminPage() {
                 {/* Polls Tab */}
                 {activeTab === 'polls' && (
                     <div className="bg-zinc-800/50 border border-zinc-700 rounded-xl p-6">
-                        <AdminPollManager events={events.map(e => ({ id: e.id, name: e.name }))} />
+                        <AdminPollManager events={events.filter(e => e != null).map(e => ({ id: e.id, name: e.name }))} />
                     </div>
+                )}
+
+                {/* Groups Tab */}
+                {activeTab === 'groups' && (
+                    <GroupManager events={events.filter(e => e != null).map(e => ({ id: e.id, name: e.name }))} />
+                )}
+
+                {/* Certificates Tab */}
+                {activeTab === 'certificates' && (
+                    <CertificateManager
+                        events={events.filter(e => e != null).map(e => ({ id: e.id, name: e.name }))}
+                        tickets={tickets.map(t => ({ id: t.id, name: t.name, email: t.email }))}
+                    />
                 )}
 
                 {activeTab === 'analytics' && (
@@ -2044,7 +2239,7 @@ export default function AdminPage() {
                                     <Pie
                                         data={Object.keys(CATEGORY_COLORS).filter(c => c !== 'other').map(cat => ({
                                             name: cat.charAt(0).toUpperCase() + cat.slice(1),
-                                            value: events.filter(e => e.category === cat).reduce((s, e) => s + e.soldCount, 0)
+                                            value: events.filter(e => e != null && e.category === cat).reduce((s, e) => s + e.soldCount, 0)
                                         })).filter(c => c.value > 0)}
                                         cx="50%" cy="50%" outerRadius={80} dataKey="value" label
                                     >
@@ -2073,7 +2268,7 @@ export default function AdminPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-800">
-                                        {events.map(event => (
+                                        {events.filter(event => event != null).map(event => (
                                             <tr key={event.id} className="hover:bg-zinc-800/30">
                                                 <td className="px-4 py-3 text-sm text-white">{event.name}</td>
                                                 <td className="px-4 py-3 text-sm text-zinc-300">₹{(event.price / 100).toLocaleString()}</td>
@@ -2100,348 +2295,47 @@ export default function AdminPage() {
                     </div>
                 )}
 
+                {/* Import Modal */}
+                {showImportModal && (
+                    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-lg">
+                            <div className="flex justify-between items-center mb-6">
+                                <h2 className="text-xl font-bold text-white">Import Attendees</h2>
+                                <button onClick={() => setShowImportModal(false)} className="text-zinc-400 hover:text-white">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+                            <div className="space-y-4">
+                                <div className="bg-zinc-950 p-4 rounded-xl border border-zinc-800">
+                                    <p className="text-sm text-zinc-400 mb-2">CSV Format (Headers required):</p>
+                                    <code className="text-xs text-red-400 block mb-2">name, email, phone</code>
+                                    <p className="text-xs text-zinc-500">Note: Select the target event from the dashboard filter before importing.</p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-zinc-400 mb-2">Paste CSV Data</label>
+                                    <textarea
+                                        value={importCsvData}
+                                        onChange={(e) => setImportCsvData(e.target.value)}
+                                        className="w-full h-40 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white resize-none focus:border-red-500 focus:outline-none placeholder-zinc-500 text-sm font-mono"
+                                        placeholder="Name, Email, Phone&#10;John Doe, john@example.com, +919000000000"
+                                    />
+                                </div>
+
+                                <button onClick={handleImportAttendees} disabled={isImporting} className="w-full py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 font-semibold disabled:opacity-50 flex justify-center items-center gap-2">
+                                    {isImporting && <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                                    {isImporting ? 'Importing...' : 'Import Attendees'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {showEventModal && <EventModal event={editingEvent} onSave={handleSaveEvent} onClose={() => { setShowEventModal(false); setEditingEvent(null); }} />}
             </div>
-        </main>
+        </main >
     );
 }
 
-function StatCard({ icon, label, value, color }: { icon: string; label: string; value: string | number; color: string }) {
-    const colors = { blue: 'bg-blue-900/50 text-blue-400', green: 'bg-green-900/50 text-green-400', purple: 'bg-purple-900/50 text-purple-400', red: 'bg-red-900/50 text-red-400' };
-    return (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-2">
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${colors[color as keyof typeof colors]}`}>
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        {icon === 'ticket' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />}
-                        {icon === 'check' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />}
-                        {icon === 'checkin' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />}
-                        {icon === 'money' && <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />}
-                    </svg>
-                </div>
-                <span className="text-zinc-400 text-sm">{label}</span>
-            </div>
-            <p className="text-3xl font-bold text-white">{value}</p>
-        </div>
-    );
-}
 
-function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
-    return (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6">
-            <h3 className="text-lg font-semibold text-white mb-4">{title}</h3>
-            <div className="h-64"><ResponsiveContainer width="100%" height="100%">{children}</ResponsiveContainer></div>
-        </div>
-    );
-}
 
-function EventModal({ event, onSave, onClose }: { event: Event | null; onSave: (data: Partial<Event>) => void; onClose: () => void }) {
-    const [tab, setTab] = useState<'basic' | 'details' | 'pricing' | 'schedule' | 'media'>('basic');
-    const [formData, setFormData] = useState({
-        name: event?.name || '',
-        description: event?.description || '',
-        date: event?.date || '',
-        startTime: event?.startTime || '09:00',
-        endTime: event?.endTime || '18:00',
-        venue: event?.venue || '',
-        address: event?.address || '',
-        price: event ? event.price / 100 : 0,
-        entryFee: event ? event.entryFee / 100 : 0,
-        prizePool: event ? event.prizePool / 100 : 0,
-        category: event?.category || 'other',
-        imageUrl: event?.imageUrl || '',
-        capacity: event?.capacity || 100,
-        isFeatured: event?.isFeatured || false,
-        organizer: event?.organizer || '',
-        contactEmail: event?.contactEmail || '',
-        contactPhone: event?.contactPhone || '',
-        termsAndConditions: event?.termsAndConditions || '',
-        registrationDeadline: event?.registrationDeadline || '',
-        tags: event?.tags?.join(', ') || '',
-        schedule: event?.schedule || [],
-        // Early Bird Pricing
-        earlyBirdEnabled: event?.earlyBirdEnabled || false,
-        earlyBirdPrice: event ? (event.earlyBirdPrice || 0) / 100 : 0,
-        earlyBirdDeadline: event?.earlyBirdDeadline || '',
-        // Event Reminders
-        sendReminders: event?.sendReminders ?? true,
-    });
-
-    const addScheduleItem = () => {
-        setFormData({
-            ...formData,
-            schedule: [...formData.schedule, { id: `s${Date.now()}`, time: '', title: '', description: '', speaker: '' }]
-        });
-    };
-
-    const updateScheduleItem = (index: number, field: string, value: string) => {
-        const newSchedule = [...formData.schedule];
-        newSchedule[index] = { ...newSchedule[index], [field]: value };
-        setFormData({ ...formData, schedule: newSchedule });
-    };
-
-    const removeScheduleItem = (index: number) => {
-        setFormData({ ...formData, schedule: formData.schedule.filter((_, i) => i !== index) });
-    };
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        onSave({
-            ...formData,
-            price: formData.price * 100,
-            entryFee: formData.entryFee * 100,
-            prizePool: formData.prizePool * 100,
-            earlyBirdPrice: formData.earlyBirdPrice * 100,
-            tags: formData.tags.split(',').map(t => t.trim()).filter(Boolean),
-        });
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col">
-                <div className="px-6 py-4 border-b border-zinc-800 flex justify-between items-center">
-                    <h2 className="text-xl font-semibold text-white">{event ? 'Edit Event' : 'Create Event'}</h2>
-                    <button onClick={onClose} className="text-zinc-400 hover:text-white"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-                </div>
-
-                {/* Tabs */}
-                <div className="flex border-b border-zinc-800 px-6 overflow-x-auto">
-                    {(['basic', 'details', 'pricing', 'schedule', 'media'] as const).map(t => (
-                        <button key={t} onClick={() => setTab(t)} className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px whitespace-nowrap ${tab === t ? 'border-red-500 text-red-500' : 'border-transparent text-zinc-400 hover:text-white'}`}>
-                            {t.charAt(0).toUpperCase() + t.slice(1)}
-                        </button>
-                    ))}
-                </div>
-
-                <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {tab === 'basic' && (
-                        <>
-                            <div><label className="block text-sm font-medium text-zinc-300 mb-1">Event Name *</label><input type="text" required value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                            <div><label className="block text-sm font-medium text-zinc-300 mb-1">Description</label><textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" rows={3} /></div>
-                            <div className="grid grid-cols-3 gap-4">
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Date *</label><input type="date" required value={formData.date} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Start Time</label><input type="time" value={formData.startTime} onChange={(e) => setFormData({ ...formData, startTime: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">End Time</label><input type="time" value={formData.endTime} onChange={(e) => setFormData({ ...formData, endTime: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                            </div>
-                            <div><label className="block text-sm font-medium text-zinc-300 mb-1">Category</label><select value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value as Event['category'] })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white"><option value="music">Music</option><option value="tech">Tech</option><option value="art">Art</option><option value="sports">Sports</option><option value="food">Food</option><option value="gaming">Gaming</option><option value="business">Business</option><option value="other">Other</option></select></div>
-                            <div className="flex items-center gap-2"><input type="checkbox" id="featured" checked={formData.isFeatured} onChange={(e) => setFormData({ ...formData, isFeatured: e.target.checked })} className="w-4 h-4 rounded" /><label htmlFor="featured" className="text-sm text-zinc-300">Featured Event</label></div>
-                        </>
-                    )}
-
-                    {tab === 'details' && (
-                        <>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Venue *</label><input type="text" required value={formData.venue} onChange={(e) => setFormData({ ...formData, venue: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Full Address</label><input type="text" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                            </div>
-                            <div className="grid grid-cols-3 gap-4">
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Ticket Price (₹)</label><input type="number" min="0" value={formData.price} onChange={(e) => setFormData({ ...formData, price: Number(e.target.value) })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Entry Fee (₹)</label><input type="number" min="0" value={formData.entryFee} onChange={(e) => setFormData({ ...formData, entryFee: Number(e.target.value) })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Prize Pool (₹)</label><input type="number" min="0" value={formData.prizePool} onChange={(e) => setFormData({ ...formData, prizePool: Number(e.target.value) })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Capacity</label><input type="number" min="1" value={formData.capacity} onChange={(e) => setFormData({ ...formData, capacity: Number(e.target.value) })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Registration Deadline</label><input type="date" value={formData.registrationDeadline} onChange={(e) => setFormData({ ...formData, registrationDeadline: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                            </div>
-                            <div><label className="block text-sm font-medium text-zinc-300 mb-1">Tags (comma separated)</label><input type="text" value={formData.tags} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" placeholder="gaming, esports, tournament" /></div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Organizer</label><input type="text" value={formData.organizer} onChange={(e) => setFormData({ ...formData, organizer: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                                <div><label className="block text-sm font-medium text-zinc-300 mb-1">Contact Email</label><input type="email" value={formData.contactEmail} onChange={(e) => setFormData({ ...formData, contactEmail: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" /></div>
-                            </div>
-                            <div><label className="block text-sm font-medium text-zinc-300 mb-1">Terms & Conditions</label><textarea value={formData.termsAndConditions} onChange={(e) => setFormData({ ...formData, termsAndConditions: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" rows={2} /></div>
-                        </>
-                    )}
-
-                    {tab === 'pricing' && (
-                        <>
-                            {/* Early Bird Pricing Section */}
-                            <div className="bg-zinc-800/50 rounded-xl p-5 border border-zinc-700">
-                                <div className="flex items-center justify-between mb-4">
-                                    <div>
-                                        <h3 className="text-lg font-medium text-white flex items-center gap-2">
-                                            <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            Early Bird Pricing
-                                        </h3>
-                                        <p className="text-zinc-400 text-sm">Offer discounted tickets before a deadline</p>
-                                    </div>
-                                    <label className="relative inline-flex items-center cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.earlyBirdEnabled}
-                                            onChange={(e) => setFormData({ ...formData, earlyBirdEnabled: e.target.checked })}
-                                            className="sr-only peer"
-                                        />
-                                        <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-                                    </label>
-                                </div>
-
-                                {formData.earlyBirdEnabled && (
-                                    <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-zinc-700">
-                                        <div>
-                                            <label className="block text-sm font-medium text-zinc-300 mb-1">Early Bird Price (₹)</label>
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={formData.earlyBirdPrice}
-                                                onChange={(e) => setFormData({ ...formData, earlyBirdPrice: Number(e.target.value) })}
-                                                className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white"
-                                                placeholder="Discounted price"
-                                            />
-                                            <p className="text-xs text-zinc-500 mt-1">
-                                                {formData.price > 0 && formData.earlyBirdPrice > 0 && (
-                                                    <>Save {Math.round(((formData.price - formData.earlyBirdPrice) / formData.price) * 100)}% off regular price</>
-                                                )}
-                                            </p>
-                                        </div>
-                                        <div>
-                                            <label className="block text-sm font-medium text-zinc-300 mb-1">Early Bird Deadline</label>
-                                            <input
-                                                type="date"
-                                                value={formData.earlyBirdDeadline}
-                                                onChange={(e) => setFormData({ ...formData, earlyBirdDeadline: e.target.value })}
-                                                className="w-full px-4 py-3 bg-zinc-900 border border-zinc-700 rounded-xl text-white"
-                                            />
-                                            <p className="text-xs text-zinc-500 mt-1">Price increases after this date</p>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Event Reminders Section */}
-                            <div className="bg-zinc-800/50 rounded-xl p-5 border border-zinc-700">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <h3 className="text-lg font-medium text-white flex items-center gap-2">
-                                            <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                                            </svg>
-                                            Event Reminders
-                                        </h3>
-                                        <p className="text-zinc-400 text-sm">Send email reminders to ticket holders before the event</p>
-                                    </div>
-                                    <label className="relative inline-flex items-center cursor-pointer">
-                                        <input
-                                            type="checkbox"
-                                            checked={formData.sendReminders}
-                                            onChange={(e) => setFormData({ ...formData, sendReminders: e.target.checked })}
-                                            className="sr-only peer"
-                                        />
-                                        <div className="w-11 h-6 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-600"></div>
-                                    </label>
-                                </div>
-                                {formData.sendReminders && (
-                                    <div className="mt-4 pt-4 border-t border-zinc-700">
-                                        <p className="text-sm text-zinc-400 flex items-center gap-2">
-                                            <svg className="w-4 h-4 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                            </svg>
-                                            Attendees will receive reminders:
-                                        </p>
-                                        <ul className="text-sm text-zinc-500 mt-2 space-y-1">
-                                            <li>• 7 days before the event</li>
-                                            <li>• 1 day before the event</li>
-                                            <li>• 2 hours before the event</li>
-                                        </ul>
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* Pricing Summary */}
-                            <div className="bg-gradient-to-r from-red-900/30 to-orange-900/30 rounded-xl p-5 border border-red-800/50">
-                                <h4 className="text-sm font-medium text-red-400 mb-3 flex items-center gap-2">
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-                                    </svg>
-                                    Pricing Summary
-                                </h4>
-                                <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-zinc-400">Regular Price</span>
-                                        <span className="text-white font-semibold">₹{formData.price.toLocaleString()}</span>
-                                    </div>
-                                    {formData.earlyBirdEnabled && (
-                                        <div className="flex justify-between">
-                                            <span className="text-zinc-400">Early Bird Price</span>
-                                            <span className="text-green-400 font-semibold">₹{formData.earlyBirdPrice.toLocaleString()}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </>
-                    )}
-
-                    {tab === 'schedule' && (
-                        <>
-                            <div className="flex justify-between items-center">
-                                <h3 className="text-lg font-medium text-white">Event Schedule</h3>
-                                <button type="button" onClick={addScheduleItem} className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">+ Add Item</button>
-                            </div>
-                            {formData.schedule.length === 0 ? (
-                                <p className="text-zinc-500 text-center py-8">No schedule items yet</p>
-                            ) : (
-                                <div className="space-y-3">
-                                    {formData.schedule.map((item, index) => (
-                                        <div key={item.id} className="bg-zinc-800 rounded-xl p-4 space-y-2">
-                                            <div className="flex gap-2">
-                                                <input type="time" value={item.time} onChange={(e) => updateScheduleItem(index, 'time', e.target.value)} className="w-28 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm" />
-                                                <input type="text" value={item.title} onChange={(e) => updateScheduleItem(index, 'title', e.target.value)} className="flex-1 px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm" placeholder="Session title" />
-                                                <button type="button" onClick={() => removeScheduleItem(index)} className="px-2 text-red-400 hover:text-red-300"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-                                            </div>
-                                            <input type="text" value={item.description} onChange={(e) => updateScheduleItem(index, 'description', e.target.value)} className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm" placeholder="Description" />
-                                            <input type="text" value={item.speaker || ''} onChange={(e) => updateScheduleItem(index, 'speaker', e.target.value)} className="w-full px-3 py-2 bg-zinc-900 border border-zinc-700 rounded-lg text-white text-sm" placeholder="Speaker (optional)" />
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </>
-                    )}
-
-                    {tab === 'media' && (
-                        <>
-                            <div><label className="block text-sm font-medium text-zinc-300 mb-1">Event Image URL</label><input type="url" value={formData.imageUrl} onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })} className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl text-white" placeholder="https://..." /></div>
-                            {formData.imageUrl && (
-                                <div className="mt-2">
-                                    <p className="text-sm text-zinc-400 mb-2">Preview:</p>
-                                    <img src={formData.imageUrl} alt="Preview" className="h-32 rounded-lg object-cover" />
-                                </div>
-                            )}
-                            <div className="text-center text-zinc-500 text-sm py-2">— or upload an image —</div>
-                            <div className="bg-zinc-800 border-2 border-dashed border-zinc-700 rounded-xl p-8 text-center hover:border-red-500/50 transition-colors relative">
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => {
-                                        const file = e.target.files?.[0];
-                                        if (file) {
-                                            if (file.size > 5 * 1024 * 1024) {
-                                                alert('File size must be less than 5MB');
-                                                return;
-                                            }
-                                            const reader = new FileReader();
-                                            reader.onload = (event) => {
-                                                const base64 = event.target?.result as string;
-                                                setFormData({ ...formData, imageUrl: base64 });
-                                            };
-                                            reader.readAsDataURL(file);
-                                        }
-                                    }}
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                />
-                                <svg className="w-12 h-12 text-zinc-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                <p className="text-zinc-400 text-sm">Click or drag to upload image</p>
-                                <p className="text-zinc-500 text-xs mt-1">PNG, JPG, WebP up to 5MB</p>
-                            </div>
-                        </>
-                    )}
-                </form>
-
-                <div className="px-6 py-4 border-t border-zinc-800 flex gap-3">
-                    <button type="button" onClick={onClose} className="flex-1 px-4 py-3 bg-zinc-800 text-white rounded-xl hover:bg-zinc-700">Cancel</button>
-                    <button onClick={handleSubmit} className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 font-medium">{event ? 'Save Changes' : 'Create Event'}</button>
-                </div>
-            </div>
-        </div>
-    );
-}
