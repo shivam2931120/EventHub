@@ -14,8 +14,8 @@ const FALLBACK_EVENTS: Record<string, { name: string; price: number }> = {
 const ticketOrders: Map<string, { ticketId: string; orderId: string; ticketIds?: string[] }> = new Map();
 
 const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID || 'rzp_test_RgK3buVJzHnJJE',
-    key_secret: process.env.RAZORPAY_KEY_SECRET || 'jAg7lO4btIt6XeKd1YcRihtN',
+    key_id: process.env.RAZORPAY_KEY_ID || '',
+    key_secret: process.env.RAZORPAY_KEY_SECRET || '',
 });
 
 // Create a Razorpay order
@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
             orderId: order.id,
             amount: order.amount,
             currency: order.currency,
-            keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_RgK3buVJzHnJJE',
+            keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '',
             quantity: quantity || 1,
         });
     } catch (error) {

@@ -2,8 +2,8 @@ import axios from 'axios';
 import crypto from 'crypto';
 
 const PHONEPE_API_URL = process.env.PHONEPE_API_URL || 'https://api-preprod.phonepe.com/apis/pg-sandbox';
-const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || 'dummy-merchant-id';
-const SALT_KEY = process.env.PHONEPE_SALT_KEY || 'dummy-salt-key';
+const MERCHANT_ID = process.env.PHONEPE_MERCHANT_ID || '';
+const SALT_KEY = process.env.PHONEPE_SALT_KEY || '';
 const SALT_INDEX = process.env.PHONEPE_SALT_INDEX || '1';
 
 // Remove the strict check to allow build to pass

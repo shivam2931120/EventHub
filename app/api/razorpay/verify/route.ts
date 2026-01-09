@@ -12,7 +12,7 @@ const FALLBACK_EVENTS: Record<string, { name: string; price: number }> = {
 };
 
 function generateToken(ticketId: string): string {
-    const secret = process.env.TICKET_SECRET_KEY || 'default-secret-key-for-demo';
+    const secret = process.env.TICKET_SECRET_KEY || '';
     return crypto
         .createHmac('sha256', secret)
         .update(ticketId)
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
         console.log('Verifying payment for ticket:', ticketId);
 
         // Verify signature
-        const secret = process.env.RAZORPAY_KEY_SECRET || 'jAg7lO4btIt6XeKd1YcRihtN';
+        const secret = process.env.RAZORPAY_KEY_SECRET || '';
         const text = razorpay_order_id + '|' + razorpay_payment_id;
         const expectedSignature = crypto
             .createHmac('sha256', secret)
